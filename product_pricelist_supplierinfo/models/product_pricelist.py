@@ -2,24 +2,33 @@
 # Copyright 2018 Tecnativa - Pedro M. Baeza
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
+import logging
+
 from odoo import api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class ProductPricelist(models.Model):
     _inherit = 'product.pricelist'
 
     @api.multi
-    def _compute_price_rule(self, products_qty_partner, date=False,
-                            uom_id=False):
+    def _compute_price_rule(
+        self, products_qty_partner, date=False, uom_id=False
+    ):
         """Recompute price after calling the atomic super method for
         getting proper prices when based on supplier info.
         """
         rule_obj = self.env['product.pricelist.item']
         result = super(ProductPricelist, self)._compute_price_rule(
-            products_qty_partner, date, uom_id)
+            products_qty_partner, date, uom_id
+        )
         # Make sure all rule records are fetched at once at put in cache
         rule_obj.browse(x[1] for x in result.values()).mapped('price_discount')
         for product, qty, _partner in products_qty_partner:
+            if not product.id in result:
+                _logger.warning('Product %s price rule cannot be computed', product.display_name)
+                continue
             rule = rule_obj.browse(result[product.id][1])
             if rule.compute_price == 'formula' and rule.base == 'supplierinfo':
                 context = self.env.context
@@ -28,7 +37,8 @@ class ProductPricelist(models.Model):
                         rule,
                         date=date or context.get('date', fields.Date.today()),
                         quantity=qty,
-                    ), rule.id,
+                    ),
+                    rule.id,
                 )
         return result
 
